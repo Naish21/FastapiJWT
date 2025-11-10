@@ -123,37 +123,37 @@ UI de documentación:
 ```mermaid
 flowchart TD
   subgraph Client
-    A[Cliente / Consumidor API]
+    A[Cliente Consumidor API]
   end
 
   subgraph API[FastAPI App]
     direction TB
     M1[CORS Middleware]
-    M2[RateLimiter Middleware (5 req por 60s en login/refresh)]
+    M2[RateLimiter Middleware 5 req 60s login refresh]
     M3[JWTAuth Middleware]
 
-    R1[/auth/login (POST -> TokenPair)/]
-    R2[/auth/refresh (POST -> TokenPair)/]
-    R3[/auth/revoke (POST -> {status: ok})/]
-    R4[/protected (GET -> data)/]
+    R1[/auth/login POST TokenPair/]
+    R2[/auth/refresh POST TokenPair/]
+    R3[/auth/revoke POST status ok/]
+    R4[/protected GET data/]
 
     S1[AuthLib JWT]
     S2[Security Config]
 
-    DBL[DB Layer (SQLAlchemy Session)]
-    MDL[(Modelo: RefreshToken)]
+    DBL[DB Layer SQLAlchemy Session]
+    MDL[(Modelo RefreshToken)]
   end
 
-  subgraph DB[(PostgreSQL - psycopg)]
+  subgraph DB[(PostgreSQL psycopg)]
     TBL[(Tabla refresh_tokens)]
   end
 
-  A -->|HTTP(S)| M1
+  A -->|HTTP| M1
   M1 --> M2 --> M3 --> API_CORE
 
   subgraph API_CORE[FastAPI Routers]
     direction TB
-    RouterAuth[Router /auth]
+    RouterAuth[Router auth]
     RouterAuth --> R1
     RouterAuth --> R2
     RouterAuth --> R3
@@ -172,15 +172,15 @@ flowchart TD
   R3 -->|valida refresh JWT| S1
   R3 -->|verifica jti y token_hash y revoca| DBL --> MDL --> TBL
 
-  R4 -->|JWT access válido| M3
+  R4 -->|JWT access valido| M3
 
   S2 --> S1
   S2 --> M3
 
-  subgraph Ops[Operación]
+  subgraph Ops[Operacion]
     direction TB
-    ENV[.env local (APP_NAME, JWT_*, PSQL_*, LAZY_*)]
-    CleanupJob[Cron/Job Limpieza de tokens expirados]
+    ENV[.env local APP_NAME JWT PSQL LAZY]
+    CleanupJob[Cron Job Limpieza tokens expirados]
   end
 
   ENV -.-> API
