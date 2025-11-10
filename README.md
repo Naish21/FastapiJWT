@@ -200,29 +200,23 @@ flowchart TD
 ## Hallazgos de revisión y correcciones recomendadas
 A continuación se listan los issues detectados durante la revisión y las correcciones/pautas recomendadas.
 
-Alta prioridad
-1) Creación de tablas en import time en varios módulos
-- Problema: `Base.metadata.create_all(_engine)` se ejecuta en `routes_auth.py` y `main.py`.
-- Impacto: efectos colaterales y fragilidad.
-- Acción: centralizar la creación de tablas (idealmente en `main.py`) o usar migraciones (Alembic) para producción.
-
 Media prioridad
-2) Logging mínimo en lazy cleanup
+1) Logging mínimo en lazy cleanup
 - Problema: `_lazy_cleanup` silencia errores.
 - Acción: registrar a nivel DEBUG/INFO cuando se eliminen filas y cuando ocurra un error (sin detener el flujo principal).
 
-3) Longitud de `token_hash`
+2) Longitud de `token_hash`
 - Observación: `String(128)` para SHA-256 hex (64).
 - Acción: opcionalmente cambiar a `String(64)` para limitar estrictamente.
 
 Mejoras/operativas
-4) En producción exigir `JWT_ISSUER` y `JWT_AUDIENCE` explícitos
+3) En producción exigir `JWT_ISSUER` y `JWT_AUDIENCE` explícitos
 - Acción: si `ENV=prod`, validar presencia sin valores por defecto.
 
-5) /docs en producción (INTERNET)
+4) /docs en producción (INTERNET)
 - Acción: deshabilitar o proteger `/docs`, `/redoc`, `/openapi`.
 
-6) Tamaño de payload
+5) Tamaño de payload
 - Acción: limitar tamaño desde reverse proxy/gateway para defensa en profundidad.
 
 
