@@ -141,11 +141,11 @@ flowchart TD
     S2[Security Config]
 
     DBL[DB Layer SQLAlchemy Session]
-    MDL[(Modelo RefreshToken)]
+    MDL[Modelo RefreshToken]
   end
 
-  subgraph DB[(PostgreSQL psycopg)]
-    TBL[(Tabla refresh_tokens)]
+  subgraph DB[PostgreSQL psycopg]
+    TBL[Tabla refresh_tokens]
   end
 
   A -->|HTTP| M1
@@ -162,7 +162,7 @@ flowchart TD
 
   R1 -->|valida credenciales| S1
   R1 -->|genera tokens| S1
-  R1 -->|persistencia token_hash| DBL --> MDL --> TBL
+  R1 -->|persiste token_hash| DBL --> MDL --> TBL
 
   R2 -->|valida refresh JWT| S1
   R2 -->|verifica jti y token_hash| DBL --> MDL --> TBL
@@ -170,7 +170,7 @@ flowchart TD
   R2 -->|genera access| S1
 
   R3 -->|valida refresh JWT| S1
-  R3 -->|verifica jti y token_hash y revoca| DBL --> MDL --> TBL
+  R3 -->|revoca token| DBL --> MDL --> TBL
 
   R4 -->|JWT access valido| M3
 
