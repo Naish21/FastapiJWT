@@ -14,12 +14,8 @@ from .auth import (
     encode_refresh_token,
     decode_token,
 )
-# Ensure tables exist using the shared engine
-from .db import _engine
 from .db import get_db
 from .models import RefreshToken, Base
-
-Base.metadata.create_all(_engine)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
