@@ -1,0 +1,20 @@
+[project]
+name = "fastapijwt"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "authlib>=1.6.5",
+    "fastapi>=0.121.1",
+    "gunicorn>=23.0.0",
+    "httpx>=0.28.1",
+    "psycopg>=3.2.12",
+    "psycopg-binary>=3.2.12",
+    "psycopg-pool>=3.2.7",
+    "python-dotenv>=1.2.1",
+    "ruff>=0.14.4",
+    "sqlalchemy>=2.0.44",
+    "uuid6>=2025.0.1",
+    "uvicorn>=0.38.0",
+]
