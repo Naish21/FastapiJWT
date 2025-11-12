@@ -134,7 +134,7 @@ UI de documentación:
   - Evita que múltiples réplicas ejecuten limpieza simultáneamente.
 
 
-## Diagrama de arquitectura (Mermaid)
+## Diagrama de arquitectura
 ```mermaid
 flowchart TD
   subgraph Client
@@ -241,42 +241,52 @@ Consideraciones móviles/desktop:
 
 Mermaid (flujo cliente-servidor)
 ```mermaid
-flowchart TD
-  subgraph Client
-    direction TB
-    UI[App UI]
-    INT[Interceptor/Token Manager]
-    STORE[(Secure Storage\nrefresh)]
-    MEM[[Memoria\naccess]]
-  end
+sequenceDiagram
+    participant UI as App UI
+    participant INT as Interceptor/Token Manager
+    participant STORE as Secure Storage (refresh)
+    participant MEM as Memoria (access)
+    participant API as FastAPI API
+    participant AUTH as POST /auth/login
+    participant REF as POST /auth/refresh
+    participant PROT as GET /protected
 
-  subgraph API[FastAPI API]
-    AUTH[/POST /auth/login/]
-    REFRESH[/POST /auth/refresh/]
-    PROT[/GET /protected/]
-  end
+    Note over UI: Inicio de sesión
+    UI->>AUTH: POST /auth/login {user, pass}
+    AUTH-->>UI: 200 {access, refresh}
+    UI->>INT: Entrega tokens
+    INT->>MEM: Guardar access
+    INT->>STORE: Guardar refresh
 
-  UI -->|Credenciales| AUTH
-  AUTH -->|200 {access, refresh}| INT
-  INT -->|Guarda access en MEM| MEM
-  INT -->|Guarda refresh en STORE| STORE
+    Note over UI,API: Llamada protegida
+    UI->>PROT: GET /protected (Authorization: Bearer access)
+    PROT-->>UI: 200 OK
 
-  UI -->|Solicitud protegida\nAuthorization: Bearer access| PROT
-  PROT -->|200 OK| UI
+    Note over UI,API: Access expirado -> 401
+    UI->>PROT: GET /protected (Authorization: Bearer access)
+    PROT-->>UI: 401 Unauthorized
+    UI->>INT: Notificar 401
+    INT->>STORE: Leer refresh
+    INT->>REF: POST /auth/refresh {refresh_token}
+    REF-->>INT: 200 {new access, new refresh}
+    INT->>MEM: Actualiza access
+    INT->>STORE: Actualiza refresh
+    INT->>PROT: Reintenta GET /protected (Authorization: Bearer new access)
+    PROT-->>INT: 200 OK
+    INT-->>UI: 200 OK
 
-  PROT -->|401| INT
-  INT -->|Lee refresh| STORE
-  INT -->|POST /auth/refresh\n{refresh_token}| REFRESH
-  REFRESH -->|200 {new access, new refresh}| INT
-  INT -->|Actualiza MEM/STORE| MEM
-  INT -->|Reintenta solicitud| PROT
+    Note over INT: Si refresh falla
+    INT->>REF: POST /auth/refresh {refresh_token}
+    REF-->>INT: 401/403
+    INT-->>UI: Purga sesión y redirige a login
 
-  REFRESH -->|401/403| INT
-  INT -->|Purgar sesión \n Redirigir login| UI
-
-  %% Auto refresh proactivo
-  MEM -. timer basado en exp .-> INT
-  INT -->|Proactivo| REFRESH
+    Note over MEM: Auto-refresh proactivo (timer ~exp-30s)
+    MEM->>INT: Trigger refresh
+    INT->>STORE: Leer refresh
+    INT->>REF: POST /auth/refresh
+    REF-->>INT: {new access, new refresh}
+    INT->>MEM: Actualiza access
+    INT->>STORE: Actualiza refresh
 ```
 
 ## Notas de producción
