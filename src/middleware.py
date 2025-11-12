@@ -12,9 +12,16 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, public_paths: Optional[list[str]] = None):
         super().__init__(app)
         self.public_paths = public_paths or []
-        self.secret = os.environ.get("JWT_SECRET")
-        if not self.secret or len(self.secret) < 32:
-            raise RuntimeError("JWT_SECRET must be set and at least 32 characters")
+        self.public_key = os.environ.get("JWT_PUBLIC_KEY")
+        self.alg = os.environ.get("JWT_ALG", "RS256")
+        if self.alg.startswith("RS"):
+            if not self.public_key:
+                raise RuntimeError("JWT_PUBLIC_KEY must be set when using RS256")
+        else:
+            # HS fallback only when explicitly configured
+            self.secret = os.environ.get("JWT_SECRET")
+            if not self.secret or len(self.secret) < 32:
+                raise RuntimeError("JWT_SECRET must be set and at least 32 characters")
 
     async def dispatch(self, request: Request, call_next: Callable):
         # Security headers
@@ -29,15 +36,13 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             or path.startswith("/redoc")
         ):
             response = await call_next(request)
-        elif path.endswith("/auth/login") or path.endswith("/auth/refresh"):
-            response = await call_next(request)
         else:
             auth = request.headers.get("Authorization")
             if not auth or not auth.lower().startswith("bearer "):
                 return JSONResponse({"detail": "Missing bearer token"}, status_code=401)
             token = auth.split(" ", 1)[1]
             try:
-                claims = decode_token(token, self.secret)
+                claims = decode_token(token)
                 if claims.get("type") != "access":
                     return JSONResponse(
                         {"detail": "Invalid token type"}, status_code=401

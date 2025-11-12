@@ -1,10 +1,10 @@
-# FastAPI JWT API (Authlib, Postgres, psycopg)
+n# FastAPI JWT API (Authlib, Postgres, psycopg)
 
 Implementación de una API con FastAPI y autenticación basada en JWT usando Authlib. Incluye access tokens de corta duración (15 minutos), refresh tokens (7 días) con rotación y persistidos en PostgreSQL, middleware de validación, rate limiting en endpoints sensibles, CORS, cabeceras de seguridad, y limpieza perezosa (lazy cleanup) de tokens expirados.
 
 
 ## Características principales
-- JWT con Authlib (HS256 por defecto).
+- JWT con Authlib (RS256 por defecto, configurable por `JWT_ALG`).
 - Access token: 15 minutos.
 - Refresh token: 7 días. Rotación en cada refresh; revocación idempotente.
 - Persistencia de refresh tokens en PostgreSQL (driver `psycopg`), almacenando solo el hash (SHA-256) del token.
@@ -46,6 +46,20 @@ El fichero `src/.env` se carga automáticamente desde `main.py` con `load_dotenv
 
 Variables relevantes:
 - APP_NAME=api
+- Claves para RS256 (PEM). Usar sólo en entorno local de prueba; en prod usar gestor de secretos
+Si se configuran estas claves y JWT_ALG=RS256, no se usa JWT_SECRET
+```
+JWT_PRIVATE_KEY="""
+-----BEGIN PRIVATE KEY-----
+...
+-----END PRIVATE KEY-----
+"""
+JWT_PUBLIC_KEY="""
+-----BEGIN PUBLIC KEY-----
+...
+-----END PUBLIC KEY-----
+"""
+```
 - JWT_SECRET=dev_super_secret_key_with_minimum_32_chars_length_1234
 - JWT_ISSUER=fastapi-example
 - JWT_AUDIENCE=fastapi-clients
@@ -61,7 +75,8 @@ Variables relevantes:
 - LAZY_CLEANUP_LIMIT=200
 
 Notas:
-- `JWT_SECRET` debe tener al menos 32 caracteres. En producción, usar un gestor de secretos y no el `.env`.
+- Para RS256: definir `JWT_PRIVATE_KEY` y `JWT_PUBLIC_KEY` en PEM. En producción, usar gestor de secretos.
+- Si se usa HS256, `JWT_SECRET` debe tener al menos 32 caracteres. En producción, usar un gestor de secretos y no el `.env`.
 - Cambiar `JWT_ISSUER` y `JWT_AUDIENCE` a valores propios.
 
 
@@ -187,6 +202,82 @@ flowchart TD
   CleanupJob -.-> DB
 ```
 
+
+## Generación de claves RSA (RS256)
+Para generar claves de ejemplo en local:
+
+- openssl genrsa -out private.pem 2048
+- openssl rsa -in private.pem -pubout -out public.pem
+- Establecer JWT_PRIVATE_KEY con el contenido de private.pem y JWT_PUBLIC_KEY con el de public.pem (incluyendo las cabeceras/colas PEM).
+
+## Guía de configuración del cliente
+
+Buenas prácticas generales:
+- Usar HTTPS siempre.
+- Access token en memoria (no persistirlo). Enviar en header Authorization: Bearer <access_token>.
+- Refresh token preferiblemente en cookie httpOnly, Secure, SameSite=Lax/Strict. Si no se usan cookies, almacenarlo en un storage seguro (Keychain/Keystore en mobile, o almacenamiento cifrado controlado por el host en desktop). Evitar localStorage.
+- Minimizar el alcance del refresh token: sólo usarlo para obtener nuevos tokens.
+- Programar el auto-refresh unos segundos antes del exp del access token para evitar ráfagas de 401.
+- Serializar el flujo de refresh para evitar condiciones de carrera. Reintentar la petición original tras un refresh exitoso.
+
+Configuración (navegador con fetch/axios y cookies httpOnly):
+- CORS: en el servidor habilitar allow_credentials=true y orígenes explícitos en producción.
+- Set-Cookie: que /auth/login y /auth/refresh establezcan la cookie httpOnly del refresh (si decides mover el refresh token a cookie). En esta implementación el refresh va en el body; puedes migrarlo a cookie en producción.
+- Interceptor de peticiones:
+  1) Adjuntar Authorization: Bearer <access_token> si existe.
+  2) Si la respuesta es 401 (y no es /auth/login ni /auth/refresh):
+     - Bloquear múltiples refresh concurrentes con una promesa compartida.
+     - Llamar a POST /auth/refresh con el refresh_token actual (o confiar en cookie httpOnly).
+     - Actualizar tokens con la respuesta (se rota el refresh).
+     - Reintentar la petición original.
+  3) Si el refresh falla (401/403), limpiar sesión y redirigir a login.
+- Auto login al iniciar la app: si hay refresh token (cookie httpOnly o storage seguro), llamar a /auth/refresh para obtener un nuevo access token.
+
+Ejemplo de caducidad proactiva:
+- Usar el campo expires_in o calcular a partir del claim exp del access token para programar un setTimeout que ejecute refresh ~30-60s antes de expirar.
+
+Consideraciones móviles/desktop:
+- Almacenar el refresh en Keychain/Keystore/secure storage. Mantener el access token en memoria. Misma lógica de interceptores.
+
+Mermaid (flujo cliente-servidor)
+```mermaid
+flowchart TD
+  subgraph Client
+    direction TB
+    UI[App UI]
+    INT[Interceptor/Token Manager]
+    STORE[(Secure Storage\nrefresh)]
+    MEM[[Memoria\naccess]]
+  end
+
+  subgraph API[FastAPI API]
+    AUTH[/POST /auth/login/]
+    REFRESH[/POST /auth/refresh/]
+    PROT[/GET /protected/]
+  end
+
+  UI -->|Credenciales| AUTH
+  AUTH -->|200 {access, refresh}| INT
+  INT -->|Guarda access en MEM| MEM
+  INT -->|Guarda refresh en STORE| STORE
+
+  UI -->|Solicitud protegida\nAuthorization: Bearer access| PROT
+  PROT -->|200 OK| UI
+
+  PROT -->|401| INT
+  INT -->|Lee refresh| STORE
+  INT -->|POST /auth/refresh\n{refresh_token}| REFRESH
+  REFRESH -->|200 {new access, new refresh}| INT
+  INT -->|Actualiza MEM/STORE| MEM
+  INT -->|Reintenta solicitud| PROT
+
+  REFRESH -->|401/403| INT
+  INT -->|Purgar sesión \n Redirigir login| UI
+
+  %% Auto refresh proactivo
+  MEM -. timer basado en exp .-> INT
+  INT -->|Proactivo| REFRESH
+```
 
 ## Notas de producción
 - Habilitar HTTPS con HSTS desde el reverse proxy.

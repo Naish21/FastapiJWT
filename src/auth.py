@@ -8,10 +8,15 @@ from fastapi import HTTPException, status
 # Load settings strictly from environment (no insecure defaults)
 JWT_ISSUER = os.getenv("JWT_ISSUER", "fastapi-example")
 JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "fastapi-clients")
-JWT_ALG = os.getenv("JWT_ALG", "HS256")
+JWT_ALG = os.getenv("JWT_ALG", "RS256")
 ACCESS_TTL_MIN = int(os.getenv("ACCESS_TTL_MIN", "15"))
 REFRESH_TTL_DAYS = int(os.getenv("REFRESH_TTL_DAYS", "7"))
 CLOCK_SKEW_SECS = int(os.getenv("JWT_CLOCK_SKEW", "5"))  # small allowable clock skew
+
+# Asymmetric keys (PEM). In RS256 mode, private key is required for signing and
+# public key for verification. Fail fast if missing.
+JWT_PRIVATE_KEY = os.getenv("JWT_PRIVATE_KEY")
+JWT_PUBLIC_KEY = os.getenv("JWT_PUBLIC_KEY")
 
 
 def now_utc() -> datetime:
@@ -31,41 +36,62 @@ def _base_claims(subject: str, typ: str, issued: datetime, exp: datetime) -> dic
     }
 
 
-def encode_access_token(subject: str, secret: str) -> str:
-    if not secret or len(secret) < 32:
-        raise HTTPException(
-            status_code=500, detail="JWT secret not properly configured"
-        )
+def encode_access_token(subject: str) -> str:
+    if JWT_ALG.startswith("RS"):
+        if not JWT_PRIVATE_KEY:
+            raise HTTPException(status_code=500, detail="JWT private key not configured")
+        signing_key = JWT_PRIVATE_KEY
+    else:
+        # HS fallback only if explicitly configured
+        secret = os.getenv("JWT_SECRET")
+        if not secret or len(secret) < 32:
+            raise HTTPException(status_code=500, detail="JWT secret not properly configured")
+        signing_key = secret
+
     issued = now_utc()
     claims = _base_claims(
         subject, "access", issued, issued + timedelta(minutes=ACCESS_TTL_MIN)
     )
-    return jwt.encode({"alg": JWT_ALG}, claims, secret).decode()
+    return jwt.encode({"alg": JWT_ALG}, claims, signing_key).decode()
 
 
-def encode_refresh_token(subject: str, secret: str) -> tuple[str, dict]:
-    if not secret or len(secret) < 32:
-        raise HTTPException(
-            status_code=500, detail="JWT secret not properly configured"
-        )
+def encode_refresh_token(subject: str) -> tuple[str, dict]:
+    if JWT_ALG.startswith("RS"):
+        if not JWT_PRIVATE_KEY:
+            raise HTTPException(status_code=500, detail="JWT private key not configured")
+        signing_key = JWT_PRIVATE_KEY
+    else:
+        secret = os.getenv("JWT_SECRET")
+        if not secret or len(secret) < 32:
+            raise HTTPException(status_code=500, detail="JWT secret not properly configured")
+        signing_key = secret
+
     issued = now_utc()
     claims = _base_claims(
         subject, "refresh", issued, issued + timedelta(days=REFRESH_TTL_DAYS)
     )
-    token = jwt.encode({"alg": JWT_ALG}, claims, secret).decode()
+    token = jwt.encode({"alg": JWT_ALG}, claims, signing_key).decode()
     return token, claims
 
 
-def decode_token(token: str, secret: str) -> dict:
-    if not secret or len(secret) < 32:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid server configuration",
-        )
+def decode_token(token: str) -> dict:
+    if JWT_ALG.startswith("RS"):
+        verify_key = JWT_PUBLIC_KEY
+        if not verify_key:
+            raise HTTPException(status_code=500, detail="JWT public key not configured")
+    else:
+        secret = os.getenv("JWT_SECRET")
+        if not secret or len(secret) < 32:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid server configuration",
+            )
+        verify_key = secret
+
     try:
         claims = jwt.decode(
             token,
-            secret,
+            verify_key,
             claims_options={
                 "iss": {"essential": True, "values": [JWT_ISSUER]},
                 "aud": {"essential": True, "values": [JWT_AUDIENCE]},

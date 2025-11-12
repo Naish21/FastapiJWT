@@ -83,14 +83,8 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
 
-    secret = os.environ.get("JWT_SECRET")
-    if not secret or len(secret) < 32:
-        raise HTTPException(
-            status_code=500, detail="JWT secret not properly configured"
-        )
-
-    access = encode_access_token(data.username, secret)
-    refresh_token, claims = encode_refresh_token(data.username, secret)
+    access = encode_access_token(data.username)
+    refresh_token, claims = encode_refresh_token(data.username)
 
     expires_at = datetime.fromtimestamp(claims["exp"], tz=timezone.utc)
 
@@ -114,12 +108,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/refresh", response_model=TokenPair)
 def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
-    secret = os.environ.get("JWT_SECRET")
-    if not secret or len(secret) < 32:
-        raise HTTPException(
-            status_code=500, detail="JWT secret not properly configured"
-        )
-    claims = decode_token(body.refresh_token, secret)
+    claims = decode_token(body.refresh_token)
     if claims.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid token type")
 
@@ -136,10 +125,10 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
         )
 
     # Issue new access and optionally a rotated refresh token
-    access = encode_access_token(claims["sub"], secret)
+    access = encode_access_token(claims["sub"])
 
     # For simplicity, rotate refresh tokens to reduce risk
-    new_refresh_token, new_claims = encode_refresh_token(claims["sub"], secret)
+    new_refresh_token, new_claims = encode_refresh_token(claims["sub"]) 
 
     # Revoke old and store new
     db_obj.revoked = True
@@ -163,12 +152,7 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
 
 @router.post("/revoke")
 def revoke(body: RevokeRequest, db: Session = Depends(get_db)):
-    secret = os.environ.get("JWT_SECRET")
-    if not secret or len(secret) < 32:
-        raise HTTPException(
-            status_code=500, detail="JWT secret not properly configured"
-        )
-    claims = decode_token(body.refresh_token, secret)
+    claims = decode_token(body.refresh_token)
     if claims.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid token type")
 
