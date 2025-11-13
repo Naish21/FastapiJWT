@@ -1,6 +1,8 @@
-n# FastAPI JWT API (Authlib, Postgres, psycopg)
+# FastAPI JWT API (Authlib, Postgres, psycopg)
 
 Implementación de una API con FastAPI y autenticación basada en JWT usando Authlib. Incluye access tokens de corta duración (15 minutos), refresh tokens (7 días) con rotación y persistidos en PostgreSQL, middleware de validación, rate limiting en endpoints sensibles, CORS, cabeceras de seguridad, y limpieza perezosa (lazy cleanup) de tokens expirados.
+
+Novedad: los JWT incluyen permisos embebidos en el claim `perms` y existen dos endpoints protegidos adicionales `/end1` y `/end2` que validan dichos permisos.
 
 
 ## Características principales
@@ -85,11 +87,20 @@ Notas:
 uvicorn src.main:app --reload
 ```
 
-UI de documentación:
+UI de documentación (protegida por JWT):
 - http://localhost:8000/docs
+- Para cargar la UI y el esquema OpenAPI debes estar autenticado (Authorization: Bearer <access_token>). En la UI pulsa el botón "Authorize" e introduce: `Bearer <access_token>`.
 
 
 ## Endpoints
+
+Notas de documentación y visibilidad por usuario:
+- La documentación (/docs, /redoc, /openapi.json) está protegida por el middleware JWT.
+- El esquema OpenAPI se filtra dinámicamente según los permisos del JWT:
+  - Usuario "test": verá todos los endpoints (`/end1`, `/end2`, auth, etc.).
+  - Usuario "test1": verá `/end1` (y endpoints de auth).
+  - Usuario "test2": verá `/end2` (y endpoints de auth).
+- Para que la UI envíe el Authorization a /openapi.json, usa el botón "Authorize" y proporciona el token.
 - POST /auth/login
   - Body: { "username": "test", "password": "..." }
   - Retorna: { access_token, refresh_token, token_type=bearer, expires_in }
@@ -107,6 +118,32 @@ UI de documentación:
 - GET /protected
   - Requiere Authorization: Bearer <access_token>
 
+- GET /end1
+  - Requiere Authorization: Bearer <access_token>
+  - Permiso necesario: "end1" en el claim `perms` del JWT.
+  - Acceso esperado (con autenticación fake de ejemplo):
+    - Usuario "test": 200 OK
+    - Usuario "test1": 200 OK
+    - Usuario "test2": 403 Forbidden
+
+- GET /end2
+  - Requiere Authorization: Bearer <access_token>
+  - Permiso necesario: "end2" en el claim `perms` del JWT.
+  - Acceso esperado (con autenticación fake de ejemplo):
+    - Usuario "test": 200 OK
+    - Usuario "test1": 403 Forbidden
+    - Usuario "test2": 200 OK
+
+
+## JWT y permisos embebidos
+- Los tokens incluyen los claims estándar: iss, aud, iat, nbf, exp, sub, jti y `type` ("access" o "refresh").
+- Además, se añade un claim `perms` con la lista de permisos del usuario.
+- Mapeo de ejemplo (en esta demo):
+  - Usuario "test": perms = ["end1", "end2"]
+  - Usuario "test1": perms = ["end1"]
+  - Usuario "test2": perms = ["end2"]
+  - Otros usuarios: perms = []
+- El middleware valida el JWT y lo expone en `request.state.jwt`. Los endpoints `/end1` y `/end2` exigen que `request.state.jwt.perms` contenga el permiso correspondiente.
 
 ## Seguridad y mejores prácticas aplicadas
 - Validación estricta de JWT (Authlib): iss/aud obligatorios, exp/nbf/iat/jti/sub, leeway pequeño.
@@ -209,6 +246,30 @@ Para generar claves de ejemplo en local:
 - openssl genrsa -out private.pem 2048
 - openssl rsa -in private.pem -pubout -out public.pem
 - Establecer JWT_PRIVATE_KEY con el contenido de private.pem y JWT_PUBLIC_KEY con el de public.pem (incluyendo las cabeceras/colas PEM).
+
+## Guía rápida de prueba de permisos y docs privadas
+1) Inicia la API: `uvicorn src.main:app --reload`
+2) Login de prueba (la demo acepta usuarios cuyo nombre empiece por "test"):
+   - POST /auth/login {"username":"test","password":"cualquiera"}
+   - POST /auth/login {"username":"test1","password":"cualquiera"}
+   - POST /auth/login {"username":"test2","password":"cualquiera"}
+3) Abre /docs. Verás 401 si no estás autenticado.
+4) En la UI, pulsa "Authorize" e introduce `Bearer <access_token>` del usuario logueado.
+5) Verás solo los endpoints permitidos por ese usuario:
+   - "test": /end1 y /end2
+   - "test1": /end1
+   - "test2": /end2
+6) Llama a los endpoints con el access_token devuelto para validar acceso:
+   - GET /end1 con token de "test" -> 200; con "test1" -> 200; con "test2" -> 403
+   - GET /end2 con token de "test" -> 200; con "test1" -> 403; con "test2" -> 200
+1) Inicia la API: `uvicorn src.main:app --reload`
+2) Login de prueba (la demo acepta usuarios cuyo nombre empiece por "test"):
+   - POST /auth/login {"username":"test","password":"cualquiera"}
+   - POST /auth/login {"username":"test1","password":"cualquiera"}
+   - POST /auth/login {"username":"test2","password":"cualquiera"}
+3) Llama a los endpoints con el access_token devuelto:
+   - GET /end1 con token de "test" -> 200; con "test1" -> 200; con "test2" -> 403
+   - GET /end2 con token de "test" -> 200; con "test1" -> 403; con "test2" -> 200
 
 ## Guía de configuración del cliente
 

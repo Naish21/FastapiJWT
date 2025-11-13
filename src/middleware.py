@@ -28,13 +28,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         request.state.start_time = None
         response = None
         path = request.url.path
-        # Allow docs and public paths
-        if (
-            any(path.startswith(p) for p in self.public_paths)
-            or path.startswith("/docs")
-            or path.startswith("/openapi")
-            or path.startswith("/redoc")
-        ):
+        # Allow only explicitly configured public paths
+        if any(path.startswith(p) for p in self.public_paths):
             response = await call_next(request)
         else:
             auth = request.headers.get("Authorization")

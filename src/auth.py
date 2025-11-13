@@ -36,6 +36,23 @@ def _base_claims(subject: str, typ: str, issued: datetime, exp: datetime) -> dic
     }
 
 
+def _permissions_for_user(user: str) -> list[str]:
+    """Return permissions embedded into JWT based on the username.
+    - test1: only end1
+    - test2: only end2
+    - test: can access both end1 and end2
+    Others: none
+    """
+    u = user.lower()
+    if u == "test":
+        return ["end1", "end2"]
+    if u == "test1":
+        return ["end1"]
+    if u == "test2":
+        return ["end2"]
+    return []
+
+
 def encode_access_token(subject: str) -> str:
     if JWT_ALG.startswith("RS"):
         if not JWT_PRIVATE_KEY:
@@ -52,6 +69,8 @@ def encode_access_token(subject: str) -> str:
     claims = _base_claims(
         subject, "access", issued, issued + timedelta(minutes=ACCESS_TTL_MIN)
     )
+    # embed permissions
+    claims["perms"] = _permissions_for_user(subject)
     return jwt.encode({"alg": JWT_ALG}, claims, signing_key).decode()
 
 
@@ -70,6 +89,8 @@ def encode_refresh_token(subject: str) -> tuple[str, dict]:
     claims = _base_claims(
         subject, "refresh", issued, issued + timedelta(days=REFRESH_TTL_DAYS)
     )
+    # embed same permissions also in refresh (useful for rotation policies)
+    claims["perms"] = _permissions_for_user(subject)
     token = jwt.encode({"alg": JWT_ALG}, claims, signing_key).decode()
     return token, claims
 
